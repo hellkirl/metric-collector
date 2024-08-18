@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GaugeMetrics State</title>
+</head>
+<body>
+<table>
+    <tr>
+        <th>Metric</th>
+        <th>Value</th>
+    </tr>
+    {{range $metricName, $metricValue := .}}
+    <tr>
+        <td>{{$metricName}}</td>
+        <td>{{$metricValue}}</td>
+    </tr>
+    {{end}}
+</table>
+</body>
+</html>
