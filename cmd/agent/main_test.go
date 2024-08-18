@@ -1,97 +1,37 @@
 package main
 
 import (
+	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"reflect"
 	"runtime"
 	"testing"
 )
 
-func TestMetrics_FillFromMemStats(t *testing.T) {
-	type fields struct {
-		MemStats    runtime.MemStats
-		RandomValue uint64
-		PollCount   uint64
-	}
-	type args struct {
-		memStats *runtime.MemStats
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := &Metrics{
-				MemStats:    tt.fields.MemStats,
-				RandomValue: tt.fields.RandomValue,
-				PollCount:   tt.fields.PollCount,
-			}
-			m.FillFromMemStats(tt.args.memStats)
-		})
-	}
-}
+func TestMetrics_FillFromMemStats_Gauge(t *testing.T) {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
 
-func TestMetrics_ToMap(t *testing.T) {
-	type fields struct {
-		MemStats    runtime.MemStats
-		RandomValue uint64
-		PollCount   uint64
-	}
-	type args struct {
-		isGauge bool
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   map[string]any
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := &Metrics{
-				MemStats:    tt.fields.MemStats,
-				RandomValue: tt.fields.RandomValue,
-				PollCount:   tt.fields.PollCount,
-			}
-			if got := m.ToMap(tt.args.isGauge); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ToMap() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+	var metrics Metrics
+	randVal := rand.Uint64()
 
-func Test_sendMetrics(t *testing.T) {
-	type args struct {
-		endpoint string
-		metrics  map[string]any
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sendMetrics(tt.args.endpoint, tt.args.metrics)
-		})
-	}
-}
+	metrics.RandomValue = randVal
+	metrics.FillFromMemStats(&memStats)
 
-func Test_startAgent(t *testing.T) {
-	tests := []struct {
-		name string
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			startAgent()
-		})
+	assert.NotEmpty(t, metrics.RandomValue, "Gauge Metrics RandomValue shouldn't be empty")
+	assert.Zero(t, metrics.PollCount, "Gauge Metrics PollCount should be zero")
+
+	memStatsValue := reflect.ValueOf(memStats)
+	memStatsType := reflect.TypeOf(memStats)
+
+	metricsMap := metrics.ToMap(true)
+
+	for i := 0; i < memStatsValue.NumField(); i++ {
+		fieldName := memStatsType.Field(i).Name
+		expectedValue := memStatsValue.Field(i).Interface()
+
+		if actualValue, ok := metricsMap[fieldName]; ok {
+			assert.Equal(t, expectedValue, actualValue, "Field %s mismatch", fieldName)
+		}
 	}
 }
