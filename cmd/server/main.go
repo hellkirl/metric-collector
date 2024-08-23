@@ -4,13 +4,14 @@ import (
 	serverHandlers "devops_analytics/internal/handlers/server"
 	"devops_analytics/internal/storage"
 	"github.com/go-chi/chi/v5"
+	"log"
 	"net/http"
 )
 
 func main() {
 	err := run(setupHandler())
 	if err != nil {
-		panic(err)
+		log.Panicf("Error running server: %v", err)
 	}
 }
 
