@@ -3,6 +3,7 @@ package main
 import (
 	serverHandlers "devops_analytics/internal/handlers/server"
 	"devops_analytics/internal/storage"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 )
 
@@ -13,7 +14,7 @@ func main() {
 	}
 }
 
-func run(handler *http.ServeMux) error {
+func run(handler *chi.Mux) error {
 	err := http.ListenAndServe(":8080", handler)
 	if err != nil {
 		return err
@@ -21,12 +22,14 @@ func run(handler *http.ServeMux) error {
 	return nil
 }
 
-func setupHandler() *http.ServeMux {
+func setupHandler() *chi.Mux {
 	metricsStorage := storage.NewMemStorageHandler()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", serverHandlers.HomePage)
-	mux.HandleFunc("/update/", serverHandlers.UpdateMetricHandler(metricsStorage))
-	mux.HandleFunc("/metrics", serverHandlers.MetricsHandler(metricsStorage))
-	return mux
+	r := chi.NewRouter()
+
+	r.Get("/", serverHandlers.HomePage)
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", serverHandlers.UpdateMetricHandler(metricsStorage))
+	r.Get("/value/{metricType}/{metricName}", serverHandlers.MetricsHandler(metricsStorage))
+
+	return r
 }

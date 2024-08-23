@@ -2,9 +2,9 @@ package server
 
 import (
 	"devops_analytics/internal/storage"
-	"html/template"
+	"fmt"
+	"github.com/go-chi/chi/v5"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -17,33 +17,40 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 
 func MetricsHandler(ms *storage.MemStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/plain")
 
-		metricsType := r.URL.Query().Get("type")
-
-		tmplPath := filepath.Join("static", "metrics.html")
-		tmpl, err := template.ParseFiles(tmplPath)
-		if err != nil {
-			http.Error(w, "Unable to load template", http.StatusInternalServerError)
-			return
-		}
+		metricType := chi.URLParam(r, "metricType")
+		metricName := chi.URLParam(r, "metricName")
 
 		metrics := ms.GetMetrics()
-		data := make(map[string]any)
 
-		switch metricsType {
-		case "gauge":
-			for metricName, metricValue := range metrics.Gauges {
-				data[metricName] = metricValue
-			}
-		case "counter":
-			for metricName, metricValue := range metrics.Counters {
-				data[metricName] = float64(metricValue)
-			}
-		}
+		foundMetricNameFlag := false
 
-		if err = tmpl.Execute(w, data); err != nil {
-			http.Error(w, "Unable to render template", http.StatusInternalServerError)
+		switch metricType {
+		case string(storage.Gauge):
+			for key, val := range metrics.Gauges {
+				if strings.ToLower(metricName) == strings.ToLower(key) {
+					w.Write([]byte(fmt.Sprintf("%f", val)))
+					foundMetricNameFlag = true
+					break
+				}
+			}
+			if !foundMetricNameFlag {
+				http.Error(w, "Unknown metric name", http.StatusNotFound)
+			}
+		case string(storage.Counter):
+			for key, val := range metrics.Counters {
+				if strings.ToLower(metricName) == strings.ToLower(key) {
+					w.Write([]byte(fmt.Sprintf("%d", val)))
+					foundMetricNameFlag = true
+					break
+				}
+			}
+			if !foundMetricNameFlag {
+				http.Error(w, "Unknown metric name", http.StatusNotFound)
+			}
+		default:
+			http.Error(w, "Unknown metric type", http.StatusNotFound)
 		}
 	}
 }
@@ -52,40 +59,28 @@ func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 
-		var (
-			metricType, metricName string
-			metricValue            float64
-			err                    error
-		)
-
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		path := strings.TrimPrefix(r.URL.Path, "/update/")
-		parts := strings.Split(path, "/")
-		if len(parts) != 3 {
-			http.Error(w, "Invalid path. The path should follow this structure: ~/metricType/metricName/metricValue", http.StatusBadRequest)
-			return
-		}
-
-		metricType, metricName = parts[0], parts[1]
-		metricValue, err = strconv.ParseFloat(parts[2], 64)
-		if err != nil {
-			http.Error(w, "Invalid metric value", http.StatusBadRequest)
-			return
-		}
+		metricType := chi.URLParam(r, "metricType")
+		metricName := chi.URLParam(r, "metricName")
+		metricValue := chi.URLParam(r, "metricValue")
 
 		switch metricType {
 		case string(storage.Gauge):
-			ms.UpdateGauge(metricName, metricValue)
+			parsedFloatMetricValue, err := strconv.ParseFloat(metricValue, 64)
+			if err != nil {
+				http.Error(w, "Invalid gauge metric value", http.StatusBadRequest)
+				return
+			}
+			ms.UpdateGauge(metricName, parsedFloatMetricValue)
 		case string(storage.Counter):
-			ms.UpdateCounter(metricName, int64(metricValue))
+			parsedInt64MetricValue, err := strconv.Atoi(metricValue)
+			if err != nil {
+				http.Error(w, "Invalid counter metric value", http.StatusBadRequest)
+				return
+			}
+			ms.UpdateCounter(metricName, int64(parsedInt64MetricValue))
 		default:
 			http.Error(w, "Invalid metric type", http.StatusBadRequest)
 		}
-
 		w.WriteHeader(http.StatusOK)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -8,10 +9,24 @@ import (
 	"time"
 )
 
+var (
+	endpoint       string
+	reportInterval int64
+	pollInterval   int64
+)
+
 type Metrics struct {
 	runtime.MemStats
 	RandomValue uint64
 	PollCount   uint64
+}
+
+func init() {
+	flag.StringVar(&endpoint, "a", "localhost:8080", "Endpoint to send metrics")
+	flag.Int64Var(&reportInterval, "r", 10, "Frequency of reporting metrics in seconds")
+	flag.Int64Var(&pollInterval, "p", 2, "Frequency of polling metrics in seconds")
+
+	flag.Parse()
 }
 
 func (m *Metrics) FillFromMemStats(memStats *runtime.MemStats) {
@@ -60,9 +75,9 @@ func (m *Metrics) ToMap(isGauge bool) map[string]any {
 	return res
 }
 
-func sendMetrics(endpoint string, metrics map[string]any) {
-	for k, v := range metrics {
-		_, err := http.Post(fmt.Sprintf("http://localhost:8080/update/%s/%s/%v", endpoint, k, v), "text/plain", nil)
+func sendMetrics(metricType string, metrics map[string]any) {
+	for metricName, metricValue := range metrics {
+		_, err := http.Post(fmt.Sprintf("http://%s/update/%s/%s/%v", endpoint, metricType, metricName, metricValue), "text/plain", nil)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -70,11 +85,8 @@ func sendMetrics(endpoint string, metrics map[string]any) {
 }
 
 func startAgent() {
-	const reportInterval = 10 * time.Second
-	const pollInterval = 2 * time.Second
-
-	reportTicker := time.NewTicker(reportInterval)
-	pollTicker := time.NewTicker(pollInterval)
+	reportTicker := time.NewTicker(time.Duration(reportInterval) * time.Second)
+	pollTicker := time.NewTicker(time.Duration(pollInterval) * time.Second)
 
 	for {
 		select {
