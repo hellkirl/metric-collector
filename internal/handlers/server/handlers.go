@@ -4,15 +4,43 @@ import (
 	"devops_analytics/internal/storage"
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"html/template"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-func HomePage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hello World!"))
+var tmpl *template.Template
+
+func init() {
+	var err error
+	tmpl, err = template.ParseFiles("static/index.html", "static/index.css")
+	if err != nil {
+		log.Fatalf("Failed to parse template: %v", err)
+	}
+}
+
+func HomePage(ms *storage.MemStorage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+
+		msData := ms.GetMetrics()
+		data := struct {
+			Gauge   map[string]float64
+			Counter map[string]int64
+		}{
+			Gauge:   msData.Gauges,
+			Counter: msData.Counters,
+		}
+
+		err := tmpl.Execute(w, data)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			log.Printf("Failed to execute template: %v", err)
+			return
+		}
+	}
 }
 
 func MetricsHandler(ms *storage.MemStorage) http.HandlerFunc {

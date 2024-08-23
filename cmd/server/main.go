@@ -27,7 +27,7 @@ func setupHandler() *chi.Mux {
 
 	r := chi.NewRouter()
 
-	r.Get("/", serverHandlers.HomePage)
+	r.Get("/", serverHandlers.HomePage(metricsStorage))
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", serverHandlers.UpdateMetricHandler(metricsStorage))
 	r.Get("/value/{metricType}/{metricName}", serverHandlers.MetricsHandler(metricsStorage))
 

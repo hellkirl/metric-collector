@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Metrics Collector</title>
+</head>
+<body>
+<div class="column" style="float: left;width: 50%">
+    <h2>Gauge metrics</h2>
+    {{ range $key, $value := .Gauge }}
+    <p>{{ $key }}: {{ $value }}</p>
+    {{ end }}
+</div>
+<div class="column" style="float: left;width: 50%">
+    <h2>Counter metrics</h2>
+    {{ range $key, $value := .Counter }}
+    <p>{{ $key }}: {{ $value }}</p>
+    {{ end }}
+</div>
+</body>
+</html>
