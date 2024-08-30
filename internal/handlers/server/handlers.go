@@ -1,13 +1,15 @@
 package server
 
 import (
+	"devops_analytics/internal/models"
 	"devops_analytics/internal/storage"
+	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -15,7 +17,7 @@ var tmpl *template.Template
 
 func init() {
 	var err error
-	tmpl, err = template.ParseFiles("static/index.html", "static/index.css")
+	tmpl, err = template.ParseFiles("static/index.html")
 	if err != nil {
 		log.Fatalf("Failed to parse template: %v", err)
 	}
@@ -87,27 +89,39 @@ func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 
-		metricType := chi.URLParam(r, "metricType")
-		metricName := chi.URLParam(r, "metricName")
-		metricValue := chi.URLParam(r, "metricValue")
+		var metric models.Metrics
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Couldn't handle the request", http.StatusServiceUnavailable)
+			return
+		}
+		defer r.Body.Close()
+		if err = json.Unmarshal(body, &metric); err != nil {
+			http.Error(w, "Make sure all the metrics are correct", http.StatusBadRequest)
+			return
+		}
 
-		switch metricType {
+		if (metric.ID == string(storage.Gauge) && metric.Delta != nil) || (metric.ID == string(storage.Counter) && metric.Value != nil) {
+			http.Error(w, "Invalid metric type", http.StatusBadRequest)
+			return
+		}
+
+		switch metric.ID {
 		case string(storage.Gauge):
-			parsedFloatMetricValue, err := strconv.ParseFloat(metricValue, 64)
-			if err != nil {
-				http.Error(w, "Invalid gauge metric value", http.StatusBadRequest)
+			if metric.Value == nil {
+				http.Error(w, "Value is required for gauge", http.StatusBadRequest)
 				return
 			}
-			ms.UpdateGauge(metricName, parsedFloatMetricValue)
+			ms.UpdateGauge(metric.MType, *metric.Value)
 		case string(storage.Counter):
-			parsedInt64MetricValue, err := strconv.Atoi(metricValue)
-			if err != nil {
-				http.Error(w, "Invalid counter metric value", http.StatusBadRequest)
+			if metric.Delta == nil {
+				http.Error(w, "Delta is required for counter", http.StatusBadRequest)
 				return
 			}
-			ms.UpdateCounter(metricName, int64(parsedInt64MetricValue))
+			ms.UpdateCounter(metric.MType, *metric.Delta)
 		default:
 			http.Error(w, "Invalid metric type", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}

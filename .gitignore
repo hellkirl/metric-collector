@@ -33,6 +33,7 @@ fabric.properties
 *.exe~
 *.dll
 *.so
+.env
 *.dylib
 *.test
 *.out

@@ -12,14 +12,14 @@ func TestMetrics_FillFromMemStats_Gauge(t *testing.T) {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 
-	var metrics Metrics
+	var metrics MemStats
 	randVal := rand.Uint64()
 
 	metrics.RandomValue = randVal
 	metrics.FillFromMemStats(&memStats)
 
-	assert.NotEmpty(t, metrics.RandomValue, "Gauge Metrics RandomValue shouldn't be empty")
-	assert.Zero(t, metrics.PollCount, "Gauge Metrics PollCount should be zero")
+	assert.NotEmpty(t, metrics.RandomValue, "Gauge MemStats RandomValue shouldn't be empty")
+	assert.Zero(t, metrics.PollCount, "Gauge MemStats PollCount should be zero")
 
 	memStatsValue := reflect.ValueOf(memStats)
 	memStatsType := reflect.TypeOf(memStats)

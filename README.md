@@ -1,6 +1,6 @@
-# Metrics and alerting collection service
+# MemStats and alerting collection service
 
-<img src="https://www.agilitypr.com/wp-content/uploads/2023/01/metrics.jpg">
+<img src="https://www.agilitypr.com/wp-content/uploads/2023/01/metric.jpg">
 
 ## Content
 
@@ -40,5 +40,5 @@
 │   │   └── metricsStorage.go
 │   └── util
 └── static
-    └── metrics.html
+    └── metric.html
 ```
