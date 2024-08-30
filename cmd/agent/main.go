@@ -111,7 +111,7 @@ func sendMetrics(metricType string, metrics map[string]any) {
 			}
 		}
 
-		_, err := resty.New().R().SetBody(body).Post(fmt.Sprintf("http://%s/update", cfg.Address))
+		_, err := resty.New().R().SetHeader("Content-Encoding", "gzip").SetBody(body).Post(fmt.Sprintf("http://%s/update", cfg.Address))
 		if err != nil {
 			logger.Log.Error("Couldn't send metrics")
 		}
