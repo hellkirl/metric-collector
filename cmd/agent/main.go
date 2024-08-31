@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"devops_analytics/internal/logger"
 	"devops_analytics/internal/models"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/caarlos0/env/v6"
@@ -92,29 +95,73 @@ func (m *MemStats) ToMap(isGauge bool) map[string]any {
 	return res
 }
 
+func compressBody(metric models.AgentMetrics) []byte {
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+
+	encoder := json.NewEncoder(gz)
+	if err := encoder.Encode(metric); err != nil {
+		logger.Log.Error("Couldn't encode metric to JSON:", err)
+		gz.Close()
+		return nil
+	}
+
+	if err := gz.Close(); err != nil {
+		logger.Log.Error("Error closing gzip writer:", err)
+		return nil
+	}
+
+	return b.Bytes()
+}
+
 func sendMetrics(metricType string, metrics map[string]any) {
 	for metricName, metricValue := range metrics {
-		var body models.AgentMetrics
+		go func(metricName string, metricValue any) {
+			defer func() {
+				if r := recover(); r != nil {
+					if logger.Log != nil {
+						logger.Log.Error("Recovered from panic:", r)
+					}
+				}
+			}()
 
-		switch metricType {
-		case "gauge":
-			body = models.AgentMetrics{
-				ID:    "gauge",
-				MType: metricName,
-				Value: metricValue,
-			}
-		case "counter":
-			body = models.AgentMetrics{
-				ID:    "counter",
-				MType: metricName,
-				Delta: metricValue,
-			}
-		}
+			var body models.AgentMetrics
 
-		_, err := resty.New().R().SetHeader("Content-Encoding", "gzip").SetBody(body).Post(fmt.Sprintf("http://%s/update", cfg.Address))
-		if err != nil {
-			logger.Log.Error("Couldn't send metrics")
-		}
+			switch metricType {
+			case "gauge":
+				body = models.AgentMetrics{
+					ID:    "gauge",
+					MType: metricName,
+					Value: metricValue,
+				}
+			case "counter":
+				body = models.AgentMetrics{
+					ID:    "counter",
+					MType: metricName,
+					Delta: metricValue,
+				}
+			}
+
+			compressedBody := compressBody(body)
+			if compressedBody == nil {
+				if logger.Log != nil {
+					logger.Log.Error("Failed to compress body for metric:", metricName)
+				}
+				return
+			}
+
+			_, err := resty.New().R().
+				SetHeader("Content-Encoding", "gzip").
+				SetHeader("Content-Type", "application/json").
+				SetBody(compressedBody).
+				Post(fmt.Sprintf("http://%s/update", cfg.Address))
+
+			if err != nil {
+				if logger.Log != nil {
+					logger.Log.Error("Couldn't send metrics:", err)
+				}
+			}
+		}(metricName, metricValue)
 	}
 }
 

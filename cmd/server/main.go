@@ -2,7 +2,6 @@ package main
 
 import (
 	serverHandlers "devops_analytics/internal/handlers/server"
-	"devops_analytics/internal/logger"
 	customMiddleware "devops_analytics/internal/middleware"
 	"devops_analytics/internal/storage"
 	"github.com/go-chi/chi/v5"
@@ -15,10 +14,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func init() {
-	logger.InitializeLogger()
 }
 
 func run(handler *chi.Mux) error {

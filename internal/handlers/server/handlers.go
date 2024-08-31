@@ -88,16 +88,23 @@ func MetricsHandler(ms *storage.MemStorage) http.HandlerFunc {
 func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
+		var (
+			metric models.Metrics
+			body   []byte
+			err    error
+		)
 
-		var metric models.Metrics
-		body, err := io.ReadAll(r.Body)
+		body, err = io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "Couldn't handle the request", http.StatusServiceUnavailable)
+			http.Error(w, "Couldn't read request body", http.StatusBadRequest)
+			log.Printf("Error reading request body: %v", err)
 			return
 		}
 		defer r.Body.Close()
+
 		if err = json.Unmarshal(body, &metric); err != nil {
-			http.Error(w, "Make sure all the metrics are correct", http.StatusBadRequest)
+			http.Error(w, "Invalid JSON format for metrics", http.StatusBadRequest)
+			log.Printf("JSON unmarshal error: %v", err)
 			return
 		}
 
@@ -123,6 +130,7 @@ func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 			http.Error(w, "Invalid metric type", http.StatusBadRequest)
 			return
 		}
+
 		w.WriteHeader(http.StatusOK)
 	}
 }
