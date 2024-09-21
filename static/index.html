@@ -2,20 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MemStats Collector</title>
+    <title>Metrics</title>
 </head>
 <body>
+<h1>Metrics</h1>
 <div class="column" style="float: left;width: 50%">
-    <h2>Gauge metric</h2>
-    {{ range $key, $value := .Gauge }}
-    <p>{{ $key }}: {{ $value }}</p>
-    {{ end }}
+    <h2>Gauges</h2>
+    <ul>
+        {{range $key, $value := .Gauges}}
+        <li>{{$key}}: {{$value}}</li>
+        {{end}}
+    </ul>
 </div>
 <div class="column" style="float: left;width: 50%">
-    <h2>Counter metric</h2>
-    {{ range $key, $value := .Counter }}
-    <p>{{ $key }}: {{ $value }}</p>
-    {{ end }}
+    <h2>Counters</h2>
+    <ul>
+        {{range $key, $value := .Counters}}
+        <li>{{$key}}: {{$value}}</li>
+        {{end}}
+    </ul>
 </div>
 </body>
 </html>

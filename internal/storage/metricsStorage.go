@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"devops_analytics/internal/logger"
+	"encoding/json"
 	"sync"
 )
 
@@ -12,14 +14,14 @@ const (
 )
 
 type MemStorage struct {
-	mu       sync.Mutex
+	rwm      sync.RWMutex
 	gauges   map[string]float64
 	counters map[string]int64
 }
 
 type ReadOnlyStorage struct {
-	Gauges   map[string]float64
-	Counters map[string]int64
+	Gauges   map[string]float64 `json:"gauges"`
+	Counters map[string]int64   `json:"counters"`
 }
 
 func NewMemStorageHandler() *MemStorage {
@@ -30,32 +32,47 @@ func NewMemStorageHandler() *MemStorage {
 }
 
 func (ms *MemStorage) UpdateGauge(name string, value float64) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.rwm.Lock()
 	ms.gauges[name] = value
+	ms.rwm.Unlock()
 }
 
 func (ms *MemStorage) UpdateCounter(name string, value int64) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.rwm.Lock()
 	ms.counters[name] += value
+	ms.rwm.Unlock()
 }
 
 func (ms *MemStorage) GetMetrics() ReadOnlyStorage {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.rwm.RLock()
+	defer ms.rwm.RUnlock()
 
-	resp := ReadOnlyStorage{
-		Gauges:   make(map[string]float64),
-		Counters: make(map[string]int64),
+	return ReadOnlyStorage{
+		Gauges:   ms.gauges,
+		Counters: ms.counters,
+	}
+}
+
+func (ms *MemStorage) ToJson() []byte {
+	metrics := ms.GetMetrics()
+	body, err := json.MarshalIndent(metrics, "", "  ")
+	if err != nil {
+		logger.Log.Error("Error marshaling metrics to json: ", err)
+	}
+	return body
+}
+
+func (ms *MemStorage) FromJson(data []byte) {
+	ms.rwm.Lock()
+	defer ms.rwm.Unlock()
+
+	var metrics ReadOnlyStorage
+	err := json.Unmarshal(data, &metrics)
+	if err != nil {
+		logger.Log.Error("Error unmarshaling metrics from json: ", err)
+		return
 	}
 
-	for k, v := range ms.gauges {
-		resp.Gauges[k] = v
-	}
-	for k, v := range ms.counters {
-		resp.Counters[k] = v
-	}
-
-	return resp
+	ms.counters = metrics.Counters
+	ms.gauges = metrics.Gauges
 }

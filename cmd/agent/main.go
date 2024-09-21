@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"devops_analytics/internal/logger"
 	"devops_analytics/internal/models"
-	"encoding/json"
+	"devops_analytics/internal/utils"
 	"flag"
 	"fmt"
 	"github.com/caarlos0/env/v6"
@@ -13,6 +11,8 @@ import (
 	"log"
 	"math/rand"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,10 +25,16 @@ type Config struct {
 type MemStats struct {
 	runtime.MemStats
 	RandomValue uint64
-	PollCount   uint64
 }
 
-var cfg Config
+var (
+	cfg           Config
+	metrics       MemStats
+	rwMu          sync.RWMutex
+	memStats      runtime.MemStats
+	pollCount     atomic.Int64
+	lastPollCount int64 = 0
+)
 
 func init() {
 	err := env.Parse(&cfg)
@@ -50,99 +56,98 @@ func init() {
 }
 
 func (m *MemStats) FillFromMemStats(memStats *runtime.MemStats) {
-	*m = MemStats{MemStats: *memStats}
+	rwMu.Lock()
+	m.MemStats = *memStats
 	m.RandomValue = rand.Uint64()
+	rwMu.Unlock()
+	pollCount.Add(1)
 }
 
-func (m *MemStats) ToMap(isGauge bool) map[string]any {
-	res := map[string]any{
-		"Alloc":         m.Alloc,
-		"BuckHashSys":   m.BuckHashSys,
-		"Frees":         m.Frees,
+func (m *MemStats) ToGaugeMap() map[string]float64 {
+	rwMu.Lock()
+	defer rwMu.Unlock()
+	return map[string]float64{
+		"Alloc":         float64(m.Alloc),
+		"BuckHashSys":   float64(m.BuckHashSys),
+		"Frees":         float64(m.Frees),
 		"GCCPUFraction": m.GCCPUFraction,
-		"GCSys":         m.GCSys,
-		"HeapAlloc":     m.HeapAlloc,
-		"HeapIdle":      m.HeapIdle,
-		"HeapInuse":     m.HeapInuse,
-		"HeapObjects":   m.HeapObjects,
-		"HeapReleased":  m.HeapReleased,
-		"HeapSys":       m.HeapSys,
-		"LastGC":        m.LastGC,
-		"Lookups":       m.Lookups,
-		"MCacheInuse":   m.MCacheInuse,
-		"MCacheSys":     m.MCacheSys,
-		"MSpanInuse":    m.MSpanInuse,
-		"MSpanSys":      m.MSpanSys,
-		"Mallocs":       m.Mallocs,
-		"NextGC":        m.NextGC,
-		"NumForcedGC":   m.NumForcedGC,
-		"NumGC":         m.NumGC,
-		"OtherSys":      m.OtherSys,
-		"PauseTotalNs":  m.PauseTotalNs,
-		"StackInuse":    m.StackInuse,
-		"StackSys":      m.StackSys,
-		"Sys":           m.Sys,
-		"TotalAlloc":    m.TotalAlloc,
+		"GCSys":         float64(m.GCSys),
+		"HeapAlloc":     float64(m.HeapAlloc),
+		"HeapIdle":      float64(m.HeapIdle),
+		"HeapInuse":     float64(m.HeapInuse),
+		"HeapObjects":   float64(m.HeapObjects),
+		"HeapReleased":  float64(m.HeapReleased),
+		"HeapSys":       float64(m.HeapSys),
+		"LastGC":        float64(m.LastGC),
+		"Lookups":       float64(m.Lookups),
+		"MCacheInuse":   float64(m.MCacheInuse),
+		"MCacheSys":     float64(m.MCacheSys),
+		"MSpanInuse":    float64(m.MSpanInuse),
+		"MSpanSys":      float64(m.MSpanSys),
+		"Mallocs":       float64(m.Mallocs),
+		"NextGC":        float64(m.NextGC),
+		"NumForcedGC":   float64(m.NumForcedGC),
+		"NumGC":         float64(m.NumGC),
+		"OtherSys":      float64(m.OtherSys),
+		"PauseTotalNs":  float64(m.PauseTotalNs),
+		"StackInuse":    float64(m.StackInuse),
+		"StackSys":      float64(m.StackSys),
+		"Sys":           float64(m.Sys),
+		"TotalAlloc":    float64(m.TotalAlloc),
+		"RandomValue":   float64(m.RandomValue),
 	}
-
-	if isGauge {
-		res["RandomValue"] = m.RandomValue
-	} else {
-		m.PollCount++
-		res["PollCount"] = m.PollCount
-	}
-
-	return res
 }
 
-func compressBody(metric models.AgentMetrics) []byte {
-	var b bytes.Buffer
-	gz := gzip.NewWriter(&b)
+func (m *MemStats) ToCounterMap() map[string]uint64 {
+	currentCount := pollCount.Load()
+	delta := currentCount - lastPollCount
+	lastPollCount = currentCount
 
-	encoder := json.NewEncoder(gz)
-	if err := encoder.Encode(metric); err != nil {
-		logger.Log.Error("Couldn't encode metric to JSON:", err)
-		gz.Close()
-		return nil
+	return map[string]uint64{
+		"PollCount": uint64(delta),
 	}
-
-	if err := gz.Close(); err != nil {
-		logger.Log.Error("Error closing gzip writer:", err)
-		return nil
-	}
-
-	return b.Bytes()
 }
 
-func sendMetrics(metricType string, metrics map[string]any) {
-	for metricName, metricValue := range metrics {
-		go func(metricName string, metricValue any) {
-			defer func() {
-				if r := recover(); r != nil {
-					if logger.Log != nil {
-						logger.Log.Error("Recovered from panic:", r)
-					}
-				}
-			}()
-
+func sendMetrics(gaugeMetrics map[string]float64, counterMetrics map[string]uint64) {
+	for metricName, metricValue := range gaugeMetrics {
+		go func(metricName string, metricValue float64) {
 			var body models.AgentMetrics
 
-			switch metricType {
-			case "gauge":
-				body = models.AgentMetrics{
-					ID:    "gauge",
-					MType: metricName,
-					Value: metricValue,
+			body.MType = "gauge"
+			body.ID = metricName
+			body.Value = &metricValue
+
+			compressedBody := utils.CompressBody(body)
+			if compressedBody == nil {
+				if logger.Log != nil {
+					logger.Log.Error("Failed to compress body for metric:", metricName)
 				}
-			case "counter":
-				body = models.AgentMetrics{
-					ID:    "counter",
-					MType: metricName,
-					Delta: metricValue,
-				}
+				return
 			}
 
-			compressedBody := compressBody(body)
+			_, err := resty.New().R().
+				SetHeader("Content-Encoding", "gzip").
+				SetHeader("Content-Type", "application/json").
+				SetBody(compressedBody).
+				Post(fmt.Sprintf("http://%s/update", cfg.Address))
+
+			if err != nil {
+				if logger.Log != nil {
+					logger.Log.Error("Couldn't send metrics:", err)
+				}
+			}
+		}(metricName, metricValue)
+	}
+
+	for metricName, metricValue := range counterMetrics {
+		go func(metricName string, metricValue uint64) {
+			var body models.AgentMetrics
+
+			body.MType = "counter"
+			body.ID = metricName
+			body.Delta = &metricValue
+
+			compressedBody := utils.CompressBody(body)
 			if compressedBody == nil {
 				if logger.Log != nil {
 					logger.Log.Error("Failed to compress body for metric:", metricName)
@@ -172,17 +177,10 @@ func startAgent() {
 	for {
 		select {
 		case <-pollTicker.C:
-			var memStats runtime.MemStats
-			var metrics MemStats
 			runtime.ReadMemStats(&memStats)
 			metrics.FillFromMemStats(&memStats)
-			sendMetrics("counter", metrics.ToMap(false))
 		case <-reportTicker.C:
-			var memStats runtime.MemStats
-			var metrics MemStats
-			runtime.ReadMemStats(&memStats)
-			metrics.FillFromMemStats(&memStats)
-			sendMetrics("gauge", metrics.ToMap(true))
+			sendMetrics(metrics.ToGaugeMap(), metrics.ToCounterMap())
 		}
 	}
 }

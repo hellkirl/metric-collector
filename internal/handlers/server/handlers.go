@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 )
 
 var tmpl *template.Template
@@ -29,11 +28,11 @@ func HomePage(ms *storage.MemStorage) http.HandlerFunc {
 
 		msData := ms.GetMetrics()
 		data := struct {
-			Gauge   map[string]float64
-			Counter map[string]int64
+			Gauges   map[string]float64
+			Counters map[string]int64
 		}{
-			Gauge:   msData.Gauges,
-			Counter: msData.Counters,
+			Gauges:   msData.Gauges,
+			Counters: msData.Counters,
 		}
 
 		err := tmpl.Execute(w, data)
@@ -54,29 +53,17 @@ func MetricsHandler(ms *storage.MemStorage) http.HandlerFunc {
 
 		metrics := ms.GetMetrics()
 
-		foundMetricNameFlag := false
-
 		switch metricType {
 		case string(storage.Gauge):
-			for key, val := range metrics.Gauges {
-				if strings.ToLower(metricName) == strings.ToLower(key) {
-					w.Write([]byte(fmt.Sprintf("%f", val)))
-					foundMetricNameFlag = true
-					break
-				}
-			}
-			if !foundMetricNameFlag {
+			if val, ok := metrics.Gauges[metricName]; ok {
+				w.Write([]byte(fmt.Sprintf("%f", val)))
+			} else {
 				http.Error(w, "Unknown metric name", http.StatusNotFound)
 			}
 		case string(storage.Counter):
-			for key, val := range metrics.Counters {
-				if strings.ToLower(metricName) == strings.ToLower(key) {
-					w.Write([]byte(fmt.Sprintf("%d", val)))
-					foundMetricNameFlag = true
-					break
-				}
-			}
-			if !foundMetricNameFlag {
+			if val, ok := metrics.Counters[metricName]; ok {
+				w.Write([]byte(fmt.Sprintf("%d", val)))
+			} else {
 				http.Error(w, "Unknown metric name", http.StatusNotFound)
 			}
 		default:
@@ -87,7 +74,7 @@ func MetricsHandler(ms *storage.MemStorage) http.HandlerFunc {
 
 func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "application/json")
 		var (
 			metric models.Metrics
 			body   []byte
@@ -103,29 +90,25 @@ func UpdateMetricHandler(ms *storage.MemStorage) http.HandlerFunc {
 		defer r.Body.Close()
 
 		if err = json.Unmarshal(body, &metric); err != nil {
+			fmt.Println(string(body))
 			http.Error(w, "Invalid JSON format for metrics", http.StatusBadRequest)
 			log.Printf("JSON unmarshal error: %v", err)
 			return
 		}
 
-		if (metric.ID == string(storage.Gauge) && metric.Delta != nil) || (metric.ID == string(storage.Counter) && metric.Value != nil) {
-			http.Error(w, "Invalid metric type", http.StatusBadRequest)
-			return
-		}
-
-		switch metric.ID {
+		switch metric.MType {
 		case string(storage.Gauge):
 			if metric.Value == nil {
 				http.Error(w, "Value is required for gauge", http.StatusBadRequest)
 				return
 			}
-			ms.UpdateGauge(metric.MType, *metric.Value)
+			ms.UpdateGauge(metric.ID, *metric.Value)
 		case string(storage.Counter):
 			if metric.Delta == nil {
 				http.Error(w, "Delta is required for counter", http.StatusBadRequest)
 				return
 			}
-			ms.UpdateCounter(metric.MType, *metric.Delta)
+			ms.UpdateCounter(metric.ID, *metric.Delta)
 		default:
 			http.Error(w, "Invalid metric type", http.StatusBadRequest)
 			return
