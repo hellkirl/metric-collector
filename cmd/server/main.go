@@ -27,25 +27,6 @@ var (
 	metricsStorage *storage.MemStorage
 )
 
-func main() {
-	go storeMetrics()
-
-	err := run(setupHandler())
-	if err != nil {
-		panic(err)
-	}
-}
-
-func storeMetrics() {
-	storageTicker := time.NewTicker(time.Duration(cfg.StorageInterval) * time.Second)
-	for {
-		select {
-		case <-storageTicker.C:
-			utils.SaveMetrics(cfg.FileStoragePath, metricsStorage.ToJson())
-		}
-	}
-}
-
 func init() {
 	err := env.Parse(&cfg)
 	if err != nil {
@@ -67,7 +48,33 @@ func init() {
 		flag.BoolVar(&cfg.Restore, "r", false, "Restore data when starting the server")
 	}
 
+	flag.Parse()
+
 	metricsStorage = storage.NewMemStorageHandler()
+}
+
+func main() {
+	if cfg.Restore {
+		previousMetrics := utils.RestoreMetrics(cfg.FileStoragePath)
+		metricsStorage.FromJson(previousMetrics)
+	}
+
+	go storeMetrics()
+
+	err := run(setupHandler())
+	if err != nil {
+		panic(err)
+	}
+}
+
+func storeMetrics() {
+	storageTicker := time.NewTicker(time.Duration(cfg.StorageInterval) * time.Second)
+	for {
+		select {
+		case <-storageTicker.C:
+			utils.SaveMetrics(cfg.FileStoragePath, metricsStorage.ToJson())
+		}
+	}
 }
 
 func run(handler *chi.Mux) error {

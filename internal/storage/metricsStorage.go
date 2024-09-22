@@ -73,6 +73,10 @@ func (ms *MemStorage) FromJson(data []byte) {
 		return
 	}
 
-	ms.counters = metrics.Counters
-	ms.gauges = metrics.Gauges
+	for name, value := range metrics.Gauges {
+		ms.gauges[name] = value
+	}
+	for name, value := range metrics.Counters {
+		ms.counters[name] = value
+	}
 }

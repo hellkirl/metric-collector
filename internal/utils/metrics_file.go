@@ -2,7 +2,7 @@ package utils
 
 import (
 	"devops_analytics/internal/logger"
-	"devops_analytics/internal/storage"
+	"io"
 	"os"
 )
 
@@ -21,17 +21,18 @@ func SaveMetrics(fileStoragePath string, data []byte) {
 	}
 }
 
-func RestoreMetrics(restore bool, fileStoragePath string, ms *storage.MemStorage) {
-	if restore {
-		file, err := os.OpenFile(fileStoragePath, os.O_RDONLY, 0644)
-		if err != nil {
-			logger.Log.Error("Error opening file: ", err)
-			return
-		}
-		defer file.Close()
-
-		var data []byte
-		_, err = file.Read(data)
-		ms.FromJson(data)
+func RestoreMetrics(fileStoragePath string) []byte {
+	file, err := os.OpenFile(fileStoragePath, os.O_RDONLY, 0644)
+	if err != nil {
+		logger.Log.Error("Error opening file: ", err)
+		return nil
 	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		logger.Log.Error("Error reading from file: ", err)
+		return nil
+	}
+	return data
 }
